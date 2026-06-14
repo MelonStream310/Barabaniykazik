@@ -32,7 +32,8 @@
         .inputs-row { display: flex; gap: 10px; }
         .input-group { display: flex; flex-direction: column; gap: 4px; flex: 1; }
         label { font-size: 12px; color: #888; }
-        input { padding: 8px; background: #111; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 14px; text-align: center; }
+        input { padding: 8px; background: #111; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 14px; text-align: center; -moz-appearance: textfield; }
+        input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .bet-sections { display: flex; gap: 8px; }
         .bet-btn { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 13px; }
         .btn-red { background: #e74c3c; color: #fff; }
@@ -60,11 +61,11 @@
             <div class="inputs-row">
                 <div class="input-group">
                     <label>Ставка (👊):</label>
-                    <input type="number" id="bet-amount" value="50" min="1">
+                    <input type="number" id="bet-amount" value="50" min="1" inputmode="numeric">
                 </div>
                 <div class="input-group">
                     <label>Число (0-36):</label>
-                    <input type="number" id="bet-number" placeholder="—" min="0" max="36">
+                    <input type="number" id="bet-number" min="0" max="36" inputmode="numeric">
                 </div>
             </div>
 
@@ -81,16 +82,13 @@
         Telegram.WebApp.ready();
         Telegram.WebApp.expand();
 
-        // --- ДОБАВЛЕНО: Чтение баланса из GET-параметра от Телеграм бота ---
         function getUrlParam(param) {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get(param);
         }
 
-        // Извлекаем переданный баланс. Если параметров нет (открыли просто так) — ставим 0
         let playerBalance = parseInt(getUrlParam('balance')) || 0;
         document.getElementById('balance').innerText = playerBalance;
-        // ------------------------------------------------------------------
 
         const rouletteNumbers = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
         const totalSectors = rouletteNumbers.length;
@@ -119,6 +117,7 @@
 
                 ctx.save();
                 ctx.translate(radius, radius);
+                // Корректируем поворот текста, чтобы он был строго по центру сектора
                 ctx.rotate(currentAngle + anglePerSector / 2 + Math.PI / 2);
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 10px Arial';
@@ -141,8 +140,16 @@
             if (color) document.getElementById(`btn-${color}`).classList.add('selected');
         }
 
-        document.getElementById('bet-number').addEventListener('input', () => {
-            if(document.getElementById('bet-number').value !== "") selectColor(null);
+        // ИСПРАВЛЕНО: Улучшена обработка ввода чисел
+        document.getElementById('bet-number').addEventListener('input', (e) => {
+            let val = e.target.value;
+            if (val !== "") {
+                selectColor(null);
+                // Ограничение диапазона от 0 до 36
+                let num = parseInt(val);
+                if (num < 0) e.target.value = 0;
+                if (num > 36) e.target.value = 36;
+            }
         });
 
         function spinWheel() {
@@ -154,18 +161,15 @@
 
             if (isNaN(betAmount) || betAmount <= 0) return alert('Введите сумму ставки!');
             
-            // --- ДОБАВЛЕНО: Проверка баланса прямо на фронтенде перед кручением ---
             if (betAmount > playerBalance) {
-                return alert('У тебя не хватает обьебонов на эту ставку, сосунок!');
+                return alert('У тебя не хватает фишек на эту ставку, сосунок!');
             }
-            // ---------------------------------------------------------------------
 
             if (selectedColor === null && betNumber === null) return alert('Выберите цвет или число!');
 
             isSpinning = true;
             document.getElementById('spin-button').disabled = true;
 
-            // Визуально отнимаем ставку у игрока сразу при клике
             playerBalance -= betAmount;
             document.getElementById('balance').innerText = playerBalance;
 
@@ -175,7 +179,10 @@
             let winningColor = winningColorHex === '#e74c3c' ? 'red' : winningColorHex === '#2c3e50' ? 'black' : 'green';
 
             const sectorAngleDeg = 360 / totalSectors;
-            const targetWheelRotation = 360 * 4 - (winningIndex * sectorAngleDeg) - 90; 
+            
+            // ИСПРАВЛЕНО: Математически точный расчет попадания в середину сектора.
+            // Добавлено смещение на половину сектора (sectorAngleDeg / 2), чтобы стрелка указывала ЧЁТКО в центр ячейки.
+            const targetWheelRotation = (360 * 4) - (winningIndex * sectorAngleDeg) - (sectorAngleDeg / 2) - 90; 
             const targetBallRotation = -(360 * 3); 
 
             const wheel = document.getElementById('wheel-canvas');
@@ -196,12 +203,11 @@
 
                 let winAmount = 0;
                 if (betNumber !== null && betNumber === winningNumber) {
-                    winAmount = betAmount * 35; // Выигрыш за число
+                    winAmount = betAmount * 35;
                 } else if (selectedColor !== null && selectedColor === winningColor) {
-                    winAmount = betAmount * 2; // Выигрыш за цвет
+                    winAmount = betAmount * 2;
                 }
 
-                // Пакет данных для отправки обратно боту
                 const resultPayload = {
                     bet: betAmount,
                     win: winAmount,
@@ -209,9 +215,7 @@
                     color: winningColor
                 };
 
-                // Отправляем данные боту — это автоматически закроет Web App окно
                 Telegram.WebApp.sendData(JSON.stringify(resultPayload));
-
             }, 4000);
         }
     </script>
