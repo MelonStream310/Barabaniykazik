@@ -32,7 +32,19 @@
         .inputs-row { display: flex; gap: 10px; }
         .input-group { display: flex; flex-direction: column; gap: 4px; flex: 1; }
         label { font-size: 12px; color: #888; }
-        input { padding: 8px; background: #111; border: 1px solid #444; color: #fff; border-radius: 6px; font-size: 14px; text-align: center; -moz-appearance: textfield; }
+        input { 
+            padding: 8px; 
+            background: #111; 
+            border: 1px solid #444; 
+            color: #fff; 
+            border-radius: 6px; 
+            font-size: 14px; 
+            text-align: center; 
+            -moz-appearance: textfield; 
+            /* ИСПРАВЛЕНИЕ: Разрешаем выделение и фокус для полей ввода */
+            user-select: text; 
+            -webkit-user-select: text;
+        }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         .bet-sections { display: flex; gap: 8px; }
         .bet-btn { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; text-transform: uppercase; font-size: 13px; }
@@ -117,7 +129,6 @@
 
                 ctx.save();
                 ctx.translate(radius, radius);
-                // Корректируем поворот текста, чтобы он был строго по центру сектора
                 ctx.rotate(currentAngle + anglePerSector / 2 + Math.PI / 2);
                 ctx.fillStyle = '#ffffff';
                 ctx.font = 'bold 10px Arial';
@@ -128,24 +139,33 @@
         }
         drawWheel();
 
+        // ИСПРАВЛЕНИЕ: Логика взаимоисключающих ставок
         let selectedColor = null;
         let isSpinning = false;
+        let currentWheelRotation = 0; 
+        let currentBallRotation = 0;
 
         function selectColor(color) {
             if (isSpinning) return;
             selectedColor = color;
+            
+            // Сбрасываем число, если выбрали цвет
             document.getElementById('bet-number').value = '';
+            
             document.getElementById('btn-red').classList.remove('selected');
             document.getElementById('btn-black').classList.remove('selected');
             if (color) document.getElementById(`btn-${color}`).classList.add('selected');
         }
 
-        // ИСПРАВЛЕНО: Улучшена обработка ввода чисел
         document.getElementById('bet-number').addEventListener('input', (e) => {
             let val = e.target.value;
+            
             if (val !== "") {
-                selectColor(null);
-                // Ограничение диапазона от 0 до 36
+                // Сбрасываем цвет, если вводим число
+                selectedColor = null;
+                document.getElementById('btn-red').classList.remove('selected');
+                document.getElementById('btn-black').classList.remove('selected');
+
                 let num = parseInt(val);
                 if (num < 0) e.target.value = 0;
                 if (num > 36) e.target.value = 36;
@@ -179,14 +199,32 @@
             let winningColor = winningColorHex === '#e74c3c' ? 'red' : winningColorHex === '#2c3e50' ? 'black' : 'green';
 
             const sectorAngleDeg = 360 / totalSectors;
-            
-            // ИСПРАВЛЕНО: Математически точный расчет попадания в середину сектора.
-            // Добавлено смещение на половину сектора (sectorAngleDeg / 2), чтобы стрелка указывала ЧЁТКО в центр ячейки.
-            const targetWheelRotation = (360 * 4) - (winningIndex * sectorAngleDeg) - (sectorAngleDeg / 2) - 90; 
-            const targetBallRotation = -(360 * 3); 
+
+            // 1. Вычисляем точный угол для конкретного сектора, чтобы он смотрел ровно вверх (на 12 часов = 270 градусов)
+            const targetAngle = 270 - (winningIndex * sectorAngleDeg) - (sectorAngleDeg / 2);
+
+            // 2. Узнаем, где сейчас находится колесо (остаток от деления на 360)
+            const currentMod = currentWheelRotation % 360;
+            let angleDiff = targetAngle - currentMod;
+
+            // 3. Если разница отрицательная, корректируем, чтобы колесо всегда крутилось только вперед
+            if (angleDiff < 0) {
+                angleDiff += 360;
+            }
+
+            // 4. Прибавляем 5 полных зрелищных оборотов (360 * 5) и добавляем доводку до нужной ячейки
+            currentWheelRotation += (360 * 5) + angleDiff; 
+
+            // 5. Шарик просто крутится в обратную сторону на 5 оборотов и всегда паркуется ровно сверху
+            currentBallRotation -= (360 * 5); 
 
             const wheel = document.getElementById('wheel-canvas');
             const ball = document.getElementById('ball');
+
+            if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+
+            wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
+            ball.style.transform = `rotate(${currentBallRotation}deg)`;
 
             if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.notificationOccurred('success');
 
@@ -216,6 +254,11 @@
                 };
 
                 Telegram.WebApp.sendData(JSON.stringify(resultPayload));
+
+                // Разблокируем интерфейс для следующей игры
+                isSpinning = false;
+                document.getElementById('spin-button').disabled = false;
+                
             }, 4000);
         }
     </script>
