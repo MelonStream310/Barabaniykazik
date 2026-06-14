@@ -41,7 +41,6 @@
             font-size: 14px; 
             text-align: center; 
             -moz-appearance: textfield; 
-            /* ИСПРАВЛЕНИЕ: Разрешаем выделение и фокус для полей ввода */
             user-select: text; 
             -webkit-user-select: text;
         }
@@ -139,9 +138,10 @@
         }
         drawWheel();
 
-        // ИСПРАВЛЕНИЕ: Логика взаимоисключающих ставок
         let selectedColor = null;
         let isSpinning = false;
+        
+        // Переменные для памяти вращения колеса (чтобы не было багов со 2-го раза)
         let currentWheelRotation = 0; 
         let currentBallRotation = 0;
 
@@ -149,9 +149,7 @@
             if (isSpinning) return;
             selectedColor = color;
             
-            // Сбрасываем число, если выбрали цвет
             document.getElementById('bet-number').value = '';
-            
             document.getElementById('btn-red').classList.remove('selected');
             document.getElementById('btn-black').classList.remove('selected');
             if (color) document.getElementById(`btn-${color}`).classList.add('selected');
@@ -161,7 +159,6 @@
             let val = e.target.value;
             
             if (val !== "") {
-                // Сбрасываем цвет, если вводим число
                 selectedColor = null;
                 document.getElementById('btn-red').classList.remove('selected');
                 document.getElementById('btn-black').classList.remove('selected');
@@ -180,11 +177,7 @@
             const betNumber = betNumberInput !== "" ? parseInt(betNumberInput) : null;
 
             if (isNaN(betAmount) || betAmount <= 0) return alert('Введите сумму ставки!');
-            
-            if (betAmount > playerBalance) {
-                return alert('У тебя не хватает фишек на эту ставку, сосунок!');
-            }
-
+            if (betAmount > playerBalance) return alert('У тебя не хватает фишек на эту ставку, сосунок!');
             if (selectedColor === null && betNumber === null) return alert('Выберите цвет или число!');
 
             isSpinning = true;
@@ -199,23 +192,17 @@
             let winningColor = winningColorHex === '#e74c3c' ? 'red' : winningColorHex === '#2c3e50' ? 'black' : 'green';
 
             const sectorAngleDeg = 360 / totalSectors;
-
-            // 1. Вычисляем точный угол для конкретного сектора, чтобы он смотрел ровно вверх (на 12 часов = 270 градусов)
+            
+            // Новая точная математика
             const targetAngle = 270 - (winningIndex * sectorAngleDeg) - (sectorAngleDeg / 2);
-
-            // 2. Узнаем, где сейчас находится колесо (остаток от деления на 360)
             const currentMod = currentWheelRotation % 360;
             let angleDiff = targetAngle - currentMod;
-
-            // 3. Если разница отрицательная, корректируем, чтобы колесо всегда крутилось только вперед
+            
             if (angleDiff < 0) {
                 angleDiff += 360;
             }
 
-            // 4. Прибавляем 5 полных зрелищных оборотов (360 * 5) и добавляем доводку до нужной ячейки
             currentWheelRotation += (360 * 5) + angleDiff; 
-
-            // 5. Шарик просто крутится в обратную сторону на 5 оборотов и всегда паркуется ровно сверху
             currentBallRotation -= (360 * 5); 
 
             const wheel = document.getElementById('wheel-canvas');
@@ -226,15 +213,11 @@
             wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
             ball.style.transform = `rotate(${currentBallRotation}deg)`;
 
-            if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.notificationOccurred('success');
-
-            wheel.style.transform = `rotate(${targetWheelRotation}deg)`;
-            ball.style.transform = `rotate(${targetBallRotation}deg)`;
-
             let tickInterval = setInterval(() => {
                 if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.impactOccurred('light');
             }, 150);
 
+            // Таймер окончания кручения (4 секунды)
             setTimeout(() => {
                 clearInterval(tickInterval);
                 if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.impactOccurred('heavy');
@@ -253,9 +236,10 @@
                     color: winningColor
                 };
 
+                // ОТПРАВЛЯЕМ ДАННЫЕ БОТУ
                 Telegram.WebApp.sendData(JSON.stringify(resultPayload));
 
-                // Разблокируем интерфейс для следующей игры
+                // РАЗБЛОКИРУЕМ ИНТЕРФЕЙС ДЛЯ СЛЕДУЮЩЕЙ ИГРЫ
                 isSpinning = false;
                 document.getElementById('spin-button').disabled = false;
                 
