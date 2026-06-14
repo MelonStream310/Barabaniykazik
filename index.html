@@ -81,9 +81,16 @@
         Telegram.WebApp.ready();
         Telegram.WebApp.expand();
 
-        // Инициализируем баланс (визуально ставим 1000, в боте всё перепроверится автоматически)
-        let playerBalance = 1000;
+        // --- ДОБАВЛЕНО: Чтение баланса из GET-параметра от Телеграм бота ---
+        function getUrlParam(param) {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get(param);
+        }
+
+        // Извлекаем переданный баланс. Если параметров нет (открыли просто так) — ставим 0
+        let playerBalance = parseInt(getUrlParam('balance')) || 0;
         document.getElementById('balance').innerText = playerBalance;
+        // ------------------------------------------------------------------
 
         const rouletteNumbers = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
         const totalSectors = rouletteNumbers.length;
@@ -146,10 +153,21 @@
             const betNumber = betNumberInput !== "" ? parseInt(betNumberInput) : null;
 
             if (isNaN(betAmount) || betAmount <= 0) return alert('Введите сумму ставки!');
+            
+            // --- ДОБАВЛЕНО: Проверка баланса прямо на фронтенде перед кручением ---
+            if (betAmount > playerBalance) {
+                return alert('У тебя не хватает обьебонов на эту ставку, сосунок!');
+            }
+            // ---------------------------------------------------------------------
+
             if (selectedColor === null && betNumber === null) return alert('Выберите цвет или число!');
 
             isSpinning = true;
             document.getElementById('spin-button').disabled = true;
+
+            // Визуально отнимаем ставку у игрока сразу при клике
+            playerBalance -= betAmount;
+            document.getElementById('balance').innerText = playerBalance;
 
             const winningIndex = Math.floor(Math.random() * totalSectors);
             const winningNumber = rouletteNumbers[winningIndex];
@@ -168,7 +186,6 @@
             wheel.style.transform = `rotate(${targetWheelRotation}deg)`;
             ball.style.transform = `rotate(${targetBallRotation}deg)`;
 
-            // Запускаем звук / вибрацию эффекта кручения шарика короткими тиками
             let tickInterval = setInterval(() => {
                 if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.impactOccurred('light');
             }, 150);
