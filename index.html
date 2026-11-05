@@ -32,16 +32,16 @@
         .inputs-row { display: flex; gap: 10px; }
         .input-group { display: flex; flex-direction: column; gap: 4px; flex: 1; }
         label { font-size: 12px; color: #888; }
-        input { 
-            padding: 8px; 
-            background: #111; 
-            border: 1px solid #444; 
-            color: #fff; 
-            border-radius: 6px; 
-            font-size: 14px; 
-            text-align: center; 
-            -moz-appearance: textfield; 
-            user-select: text; 
+        input {
+            padding: 8px;
+            background: #111;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 6px;
+            font-size: 14px;
+            text-align: center;
+            -moz-appearance: textfield;
+            user-select: text;
             -webkit-user-select: text;
         }
         input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -53,6 +53,7 @@
         .btn-black.selected { border: 2px solid #fff; box-shadow: 0 0 10px #34495e; }
         .spin-btn { background: linear-gradient(135deg, #f1c40f, #f39c12); color: #000; font-size: 16px; font-weight: bold; padding: 12px; border: none; border-radius: 6px; cursor: pointer; margin-top: 5px; }
         .spin-btn:disabled { background: #444; color: #777; cursor: not-allowed; }
+        #status { min-height: 22px; text-align: center; font-size: 15px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -68,7 +69,7 @@
 
         <div class="controls">
             <div class="balance-info">Ваши фишки: <span id="balance">Загрузка...</span> 👊</div>
-            
+
             <div class="inputs-row">
                 <div class="input-group">
                     <label>Ставка (👊):</label>
@@ -86,20 +87,48 @@
             </div>
 
             <button class="spin-btn" id="spin-button" onclick="spinWheel()">ИГРАТЬ</button>
+            <div id="status"></div>
         </div>
     </div>
 
     <script>
-        Telegram.WebApp.ready();
-        Telegram.WebApp.expand();
+        // !!! ЗАМЕНИ на адрес, который указан в WEBAPP_URL у бота (https, без слэша в конце)
+        const API = "https://REPLACE_ME";
 
-        function getUrlParam(param) {
-            const urlParams = new URLSearchParams(window.location.search);
-            return urlParams.get(param);
+        const tg = Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        const statusEl = document.getElementById('status');
+        const spinBtn = document.getElementById('spin-button');
+        let playerBalance = 0;
+
+        function setStatus(text, color) {
+            statusEl.innerText = text;
+            statusEl.style.color = color || "#fff";
         }
 
-        let playerBalance = parseInt(getUrlParam('balance')) || 0;
-        document.getElementById('balance').innerText = playerBalance;
+        function setBalance(value) {
+            playerBalance = value;
+            document.getElementById('balance').innerText = value;
+        }
+
+        // Все запросы идут на сервер, подпись Telegram (initData) подтверждает, кто играет
+        async function api(path, payload) {
+            const r = await fetch(API + path, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ initData: tg.initData, ...payload })
+            });
+            let j = {};
+            try { j = await r.json(); } catch (e) {}
+            if (!r.ok) throw new Error(j.error || "Ошибка соединения");
+            return j;
+        }
+
+        api("/api/balance", {})
+            .then(j => setBalance(j.balance))
+            .catch(e => { document.getElementById('balance').innerText = "?"; setStatus("❌ " + e.message, "#e74c3c"); });
 
         const rouletteNumbers = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
         const totalSectors = rouletteNumbers.length;
@@ -140,15 +169,13 @@
 
         let selectedColor = null;
         let isSpinning = false;
-        
-        // Переменные для памяти вращения колеса (чтобы не было багов со 2-го раза)
-        let currentWheelRotation = 0; 
+        let currentWheelRotation = 0;
         let currentBallRotation = 0;
 
         function selectColor(color) {
             if (isSpinning) return;
             selectedColor = color;
-            
+
             document.getElementById('bet-number').value = '';
             document.getElementById('btn-red').classList.remove('selected');
             document.getElementById('btn-black').classList.remove('selected');
@@ -157,7 +184,6 @@
 
         document.getElementById('bet-number').addEventListener('input', (e) => {
             let val = e.target.value;
-            
             if (val !== "") {
                 selectedColor = null;
                 document.getElementById('btn-red').classList.remove('selected');
@@ -169,7 +195,12 @@
             }
         });
 
-        function spinWheel() {
+        function unlock() {
+            isSpinning = false;
+            spinBtn.disabled = false;
+        }
+
+        async function spinWheel() {
             if (isSpinning) return;
 
             const betAmount = parseInt(document.getElementById('bet-amount').value);
@@ -181,68 +212,53 @@
             if (selectedColor === null && betNumber === null) return alert('Выберите цвет или число!');
 
             isSpinning = true;
-            document.getElementById('spin-button').disabled = true;
+            spinBtn.disabled = true;
+            setStatus("");
 
-            playerBalance -= betAmount;
-            document.getElementById('balance').innerText = playerBalance;
+            // Результат определяет сервер
+            let r;
+            try {
+                r = await api("/api/roulette", { bet: betAmount, color: selectedColor, num: betNumber });
+            } catch (e) {
+                setStatus("❌ " + e.message, "#e74c3c");
+                unlock();
+                return;
+            }
 
-            const winningIndex = Math.floor(Math.random() * totalSectors);
-            const winningNumber = rouletteNumbers[winningIndex];
-            const winningColorHex = getNumberColor(winningNumber);
-            let winningColor = winningColorHex === '#e74c3c' ? 'red' : winningColorHex === '#2c3e50' ? 'black' : 'green';
+            const winningIndex = rouletteNumbers.indexOf(r.num);
 
             const sectorAngleDeg = 360 / totalSectors;
-            
-            // Новая точная математика
             const targetAngle = 270 - (winningIndex * sectorAngleDeg) - (sectorAngleDeg / 2);
             const currentMod = currentWheelRotation % 360;
             let angleDiff = targetAngle - currentMod;
-            
-            if (angleDiff < 0) {
-                angleDiff += 360;
-            }
+            if (angleDiff < 0) angleDiff += 360;
 
-            currentWheelRotation += (360 * 5) + angleDiff; 
-            currentBallRotation -= (360 * 5); 
+            currentWheelRotation += (360 * 5) + angleDiff;
+            currentBallRotation -= (360 * 5);
 
             const wheel = document.getElementById('wheel-canvas');
             const ball = document.getElementById('ball');
 
-            if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.notificationOccurred('success');
+            if (tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
 
             wheel.style.transform = `rotate(${currentWheelRotation}deg)`;
             ball.style.transform = `rotate(${currentBallRotation}deg)`;
 
-            let tickInterval = setInterval(() => {
-                if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.impactOccurred('light');
+            const tickInterval = setInterval(() => {
+                if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
             }, 150);
 
-            // Таймер окончания кручения (4 секунды)
             setTimeout(() => {
                 clearInterval(tickInterval);
-                if (Telegram.WebApp.HapticFeedback) Telegram.WebApp.HapticFeedback.impactOccurred('heavy');
+                if (tg.HapticFeedback) tg.HapticFeedback.impactOccurred('heavy');
 
-                let winAmount = 0;
-                if (betNumber !== null && betNumber === winningNumber) {
-                    winAmount = betAmount * 35;
-                } else if (selectedColor !== null && selectedColor === winningColor) {
-                    winAmount = betAmount * 2;
-                }
+                setBalance(r.balance);
+                const colorName = r.color === 'red' ? '🔴' : r.color === 'black' ? '⚫️' : '🟢';
+                if (r.win > betAmount) setStatus(`${colorName} ${r.num} · 🎉 +${r.win - betAmount}`, "#2ecc71");
+                else if (r.win === betAmount) setStatus(`${colorName} ${r.num} · ⚖️ ставка возвращена`, "#f1c40f");
+                else setStatus(`${colorName} ${r.num} · 📉 -${betAmount}`, "#e74c3c");
 
-                const resultPayload = {
-                    bet: betAmount,
-                    win: winAmount,
-                    num: winningNumber,
-                    color: winningColor
-                };
-
-                // ОТПРАВЛЯЕМ ДАННЫЕ БОТУ
-                Telegram.WebApp.sendData(JSON.stringify(resultPayload));
-
-                // РАЗБЛОКИРУЕМ ИНТЕРФЕЙС ДЛЯ СЛЕДУЮЩЕЙ ИГРЫ
-                isSpinning = false;
-                document.getElementById('spin-button').disabled = false;
-                
+                unlock();
             }, 4000);
         }
     </script>
